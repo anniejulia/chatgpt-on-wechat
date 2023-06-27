@@ -104,7 +104,16 @@ available_setting = {
     # 知识库平台配置
     "use_linkai": False,
     "linkai_api_key": "",
-    "linkai_app_code": ""
+    "linkai_app_code": "",
+    # add xmind ai support
+    "use_xmindai": False,
+    "xmindai_clientId":"",
+    "xmindai_clientSecret":"",
+    # add  self promt
+    "use_self_promt":False,
+    "self_promt_prefix":"",
+    "self_promt_suffix":""
+
 }
 
 

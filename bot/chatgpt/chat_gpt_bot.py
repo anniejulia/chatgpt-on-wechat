@@ -15,6 +15,7 @@ from bridge.reply import Reply, ReplyType
 from common.log import logger
 from common.token_bucket import TokenBucket
 from config import conf, load_config
+from bot.chatgpt.xmind_ai import XMindAi
 
 
 # OpenAI对话模型API (可用)
@@ -30,6 +31,10 @@ class ChatGPTBot(Bot, OpenAIImage):
             openai.proxy = proxy
         if conf().get("rate_limit_chatgpt"):
             self.tb4chatgpt = TokenBucket(conf().get("rate_limit_chatgpt", 20))
+
+        if conf().get("use_xmindai",False) == True:
+            self.xmindai = XMindAi()
+            self.xmindai.getToken()
 
         self.sessions = SessionManager(ChatGPTSession, model=conf().get("model") or "gpt-3.5-turbo")
         self.args = {
@@ -47,7 +52,6 @@ class ChatGPTBot(Bot, OpenAIImage):
         # acquire reply content
         if context.type == ContextType.TEXT:
             logger.info("[CHATGPT] query={}".format(query))
-
             session_id = context["session_id"]
             reply = None
             clear_memory_commands = conf().get("clear_memory_commands", ["#清除记忆"])
@@ -62,7 +66,11 @@ class ChatGPTBot(Bot, OpenAIImage):
                 reply = Reply(ReplyType.INFO, "配置已更新")
             if reply:
                 return reply
-            session = self.sessions.session_query(query, session_id)
+            promt = query
+            if conf().get("use_self_promt", False) == True:
+                promt = conf().get("self_promt_prefix", "") + query + conf().get("self_promt_suffix", "")
+
+            session = self.sessions.session_query(promt, session_id)
             logger.debug("[CHATGPT] session query={}".format(session.messages))
 
             api_key = context.get("openai_api_key")
@@ -120,14 +128,23 @@ class ChatGPTBot(Bot, OpenAIImage):
             # if api_key == None, the default openai.api_key will be used
             if args is None:
                 args = self.args
-            response = openai.ChatCompletion.create(api_key=api_key, messages=session.messages, **args)
-            # logger.debug("[CHATGPT] response={}".format(response))
-            # logger.info("[ChatGPT] reply={}, total_tokens={}".format(response.choices[0]['message']['content'], response["usage"]["total_tokens"]))
-            return {
-                "total_tokens": response["usage"]["total_tokens"],
-                "completion_tokens": response["usage"]["completion_tokens"],
-                "content": response.choices[0]["message"]["content"],
-            }
+            if conf().get("use_xmindai",False) == True:
+                response = self.xmindai.chat(session.messages, session.session_id) 
+                choise = response["completion"]["choices"]
+                return {
+                "content": choise[0]["message"]["content"],
+                "completion_tokens": 1000,
+                "total_tokens": 10000,
+                }
+            else:
+                response = openai.ChatCompletion.create(api_key=api_key, messages=session.messages, **args)
+                # logger.debug("[CHATGPT] response={}".format(response))
+                # logger.info("[ChatGPT] reply={}, total_tokens={}".format(response.choices[0]['message']['content'], response["usage"]["total_tokens"]))
+                return {
+                    "total_tokens": response["usage"]["total_tokens"],
+                    "completion_tokens": response["usage"]["completion_tokens"],
+                    "content": response.choices[0]["message"]["content"],
+                }
         except Exception as e:
             need_retry = retry_count < 2
             result = {"completion_tokens": 0, "content": "我现在有点累了，等会再来吧"}
